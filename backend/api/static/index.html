@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Nöbet Çözücü</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+  h1 { font-size: 1.3rem; }
+  .layout { display: flex; gap: 1.5rem; align-items: flex-start; }
+  textarea { width: 100%; height: 480px; font-family: monospace; font-size: 0.85rem; }
+  .col { flex: 1; min-width: 0; }
+  button { padding: 0.5rem 1.2rem; font-size: 1rem; cursor: pointer; margin-top: 0.5rem; }
+  table { border-collapse: collapse; margin-top: 1rem; font-size: 0.85rem; }
+  th, td { border: 1px solid #ccc; padding: 0.3rem 0.5rem; text-align: center; }
+  th { background: #f0f0f0; }
+  .status { font-weight: bold; padding: 0.5rem; margin-top: 1rem; border-radius: 4px; }
+  .status.ok { background: #e3f7e3; }
+  .status.bad { background: #fbe3e3; }
+  .violations { background: #fff3cd; padding: 0.5rem; margin-top: 0.5rem; border-radius: 4px; }
+  .hint { color: #666; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<h1>Nöbet Çözücü — basit arayüz (Aşama 1)</h1>
+<p class="hint">
+  Aşağıdaki JSON girdisini kendi servisinin verilerine göre düzenle (profil, personel,
+  gereksinimler, izinler, kısıtlamalar), "Çöz" butonuna bas. Bu, gerçek servis kurallarını
+  içermeyen bir örnektir — gerçek kullanım için değerleri değiştirmen gerekir.
+</p>
+
+<div class="layout">
+  <div class="col">
+    <textarea id="input"></textarea>
+    <div><button onclick="runSolve()">Çöz</button></div>
+  </div>
+  <div class="col">
+    <div id="result">Henüz çözüm yok.</div>
+  </div>
+</div>
+
+<script>
+const example = {
+  profile: {
+    name: "servisim",
+    shift_types: [
+      {code: "07-15", start_hour: 7, duration_hours: 8, is_night: false},
+      {code: "15-23", start_hour: 15, duration_hours: 8, is_night: false},
+      {code: "23-07", start_hour: 23, duration_hours: 8, is_night: true}
+    ],
+    min_rest_hours_after_night: 11,
+    max_consecutive_work_days: 5,
+    max_period_hours: 180,
+    min_experienced_per_shift: 1
+  },
+  nurses: [
+    {id: "H1", is_experienced: true},
+    {id: "H2", is_experienced: true},
+    {id: "H3", is_experienced: false},
+    {id: "H4", is_experienced: false},
+    {id: "H5", is_experienced: false},
+    {id: "H6", is_experienced: false}
+  ],
+  period_start: "2026-09-01",
+  period_days: 14,
+  default_requirements: {"07-15": 2, "15-23": 2, "23-07": 1},
+  unavailable: [["H3", "2026-09-05"]],
+  personal_restrictions: [
+    {nurse_id: "H4", start_date: "2026-09-01", end_date: "2026-09-30", shift_code: "23-07"}
+  ],
+  weights: {s1_night_balance: 100, s2_weekend_balance: 100},
+  time_limit_seconds: 30
+};
+
+document.getElementById("input").value = JSON.stringify(example, null, 2);
+
+async function runSolve() {
+  const resultDiv = document.getElementById("result");
+  resultDiv.innerHTML = "Çözülüyor...";
+
+  let payload;
+  try {
+    payload = JSON.parse(document.getElementById("input").value);
+  } catch (e) {
+    resultDiv.innerHTML = `<div class="status bad">Geçersiz JSON: ${e.message}</div>`;
+    return;
+  }
+
+  let response;
+  try {
+    response = await fetch("/api/solve", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    resultDiv.innerHTML = `<div class="status bad">İstek başarısız: ${e.message}</div>`;
+    return;
+  }
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    resultDiv.innerHTML = `<div class="status bad">${data.error || "Bilinmeyen hata"}</div>`;
+    return;
+  }
+
+  resultDiv.innerHTML = renderResult(data);
+}
+
+function renderResult(data) {
+  const ok = data.status === "OPTIMAL" || data.status === "FEASIBLE";
+  let html = `<div class="status ${ok ? "ok" : "bad"}">Durum: ${data.status}</div>`;
+
+  if (data.violations && data.violations.length > 0) {
+    html += `<div class="violations"><b>Bağımsız doğrulayıcı ${data.violations.length} ihlal buldu:</b><ul>`;
+    for (const v of data.violations) html += `<li>${v}</li>`;
+    html += "</ul></div>";
+  }
+
+  if (!ok) return html;
+
+  html += renderAssignmentTable(data.assignments);
+  html += renderFairnessTable(data.fairness);
+  return html;
+}
+
+function renderAssignmentTable(assignments) {
+  const days = [...new Set(assignments.map(a => a.day))].sort();
+  const nurses = [...new Set(assignments.map(a => a.nurse_id))].sort();
+  const grid = {};
+  for (const a of assignments) {
+    grid[a.nurse_id] = grid[a.nurse_id] || {};
+    grid[a.nurse_id][a.day] = a.shift_code;
+  }
+
+  let html = "<table><tr><th>Personel</th>";
+  for (const d of days) html += `<th>${d.slice(5)}</th>`;
+  html += "</tr>";
+  for (const n of nurses) {
+    html += `<tr><th>${n}</th>`;
+    for (const d of days) html += `<td>${(grid[n] && grid[n][d]) || ""}</td>`;
+    html += "</tr>";
+  }
+  html += "</table>";
+  return html;
+}
+
+function renderFairnessTable(fairness) {
+  if (!fairness) return "";
+  const nurses = Object.keys(fairness.night_count).sort();
+  let html = `<table><tr><th>Personel</th><th>Gece sayısı</th><th>Hafta sonu sayısı</th></tr>`;
+  for (const n of nurses) {
+    html += `<tr><td>${n}</td><td>${fairness.night_count[n]}</td><td>${fairness.weekend_count[n]}</td></tr>`;
+  }
+  html += `<tr><th>Hedef ortalama</th><td>${fairness.night_target.toFixed(1)}</td><td>${fairness.weekend_target.toFixed(1)}</td></tr>`;
+  html += "</table>";
+  return html;
+}
+</script>
+</body>
+</html>
