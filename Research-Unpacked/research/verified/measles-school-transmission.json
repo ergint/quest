@@ -1,0 +1,70 @@
+{
+  "id": "measles-school-transmission",
+  "exact_title": "Measles school-level transmission (working title — exact paper title not yet confirmed in this project)",
+  "journal": null,
+  "publication_date": null,
+  "doi": null,
+  "pmid": null,
+  "original_url": null,
+  "publication_status": null,
+
+  "verification_status": "GREEN",
+  "verification_notes": "Marked GREEN in an earlier prompt-testing phase of this project; the underlying primary-source verification notes and bibliographic details were not carried into this repository. Component scores were not carried over either. Re-verify against the primary paper and re-score before this record can pass deterministic validation or enter the ranked Radar.",
+
+  "study_design": null,
+  "sample_size": null,
+  "population": null,
+  "primary_outcome": null,
+  "main_result": null,
+  "effect_size": null,
+  "confidence_interval": null,
+  "p_value": null,
+  "major_limitations": null,
+  "funding": null,
+  "conflicts_of_interest": null,
+
+  "paper_publication_date": null,
+  "media_date": null,
+  "why_now": "Measles outbreaks and school-level transmission dynamics are a recurring news hook tied to vaccination-rate coverage.",
+
+  "scientific_components": {
+    "study_design_quality": null,
+    "sample_strength": null,
+    "outcome_quality": null,
+    "statistical_robustness": null,
+    "replication_consistency": null,
+    "limitations_bias_risk": null
+  },
+  "youtube_components": {
+    "audience_relevance": null,
+    "curiosity_surprise": null,
+    "human_consequence": null,
+    "visual_storytelling": null,
+    "timeliness": null,
+    "title_thumbnail_potential": null,
+    "practical_emotional_relevance": null
+  },
+
+  "provisional_fields": [
+    "exact_title", "journal", "publication_date", "doi", "pmid",
+    "original_url", "publication_status", "study_design", "sample_size",
+    "population", "primary_outcome", "main_result", "effect_size",
+    "confidence_interval", "p_value", "major_limitations", "funding",
+    "conflicts_of_interest", "paper_publication_date", "media_date",
+    "scientific_components", "youtube_components", "headline_defensibility",
+    "proposed_title", "thumbnail_text", "best_video_angle"
+  ],
+
+  "headline_defensibility": "YELLOW",
+  "proposed_title": null,
+  "thumbnail_text": null,
+  "best_video_angle": null,
+
+  "scientific_score": null,
+  "youtube_score": null,
+  "final_radar_score": null,
+  "evidence_tier": null,
+  "content_priority": null,
+  "production_priority": null,
+  "validation_status": "PENDING"
+}

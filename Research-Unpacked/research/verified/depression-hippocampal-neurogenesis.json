@@ -1,0 +1,69 @@
+{
+  "id": "depression-hippocampal-neurogenesis",
+  "exact_title": "Depression and hippocampal neurogenesis (working title — exact paper title not yet confirmed in this project)",
+  "journal": null,
+  "publication_date": null,
+  "doi": null,
+  "pmid": null,
+  "original_url": null,
+  "publication_status": null,
+
+  "verification_status": "GREEN",
+  "verification_notes": "Marked GREEN in an earlier prompt-testing phase of this project; the underlying primary-source verification notes were not carried into this repository. Re-confirm against the primary paper (DOI/PMID) before this record is used for anything beyond a scoring/validator demonstration.",
+
+  "study_design": null,
+  "sample_size": null,
+  "population": null,
+  "primary_outcome": null,
+  "main_result": null,
+  "effect_size": null,
+  "confidence_interval": null,
+  "p_value": null,
+  "major_limitations": null,
+  "funding": null,
+  "conflicts_of_interest": null,
+
+  "paper_publication_date": null,
+  "media_date": null,
+  "why_now": "Depression and the neuroscience of the hippocampus are a recurring, high-interest topic; positioned as a 'this is more complicated than the headline says' angle rather than a straightforward breakthrough story.",
+
+  "scientific_components": {
+    "study_design_quality": 12,
+    "sample_strength": 6,
+    "outcome_quality": 5,
+    "statistical_robustness": 4,
+    "replication_consistency": 2,
+    "limitations_bias_risk": 1
+  },
+  "youtube_components": {
+    "audience_relevance": 8,
+    "curiosity_surprise": 7,
+    "human_consequence": 7,
+    "visual_storytelling": 5,
+    "timeliness": 3,
+    "title_thumbnail_potential": 3,
+    "practical_emotional_relevance": 5
+  },
+
+  "provisional_fields": [
+    "exact_title", "journal", "publication_date", "doi", "pmid",
+    "original_url", "publication_status", "study_design", "sample_size",
+    "population", "primary_outcome", "main_result", "effect_size",
+    "confidence_interval", "p_value", "major_limitations", "funding",
+    "conflicts_of_interest", "paper_publication_date", "media_date",
+    "scientific_components", "youtube_components"
+  ],
+
+  "headline_defensibility": "YELLOW",
+  "proposed_title": "Does the 'depression shrinks your brain' story actually hold up?",
+  "thumbnail_text": "THE HIPPOCAMPUS MYTH?",
+  "best_video_angle": "Editorial/explainer: what the neurogenesis-depression link actually shows vs. the oversimplified pop-science version.",
+
+  "scientific_score": 30,
+  "youtube_score": 38,
+  "final_radar_score": 68,
+  "evidence_tier": "C",
+  "content_priority": "HIGH",
+  "production_priority": "NO_STANDARD_PRODUCTION_PRIORITY",
+  "validation_status": "PENDING"
+}
