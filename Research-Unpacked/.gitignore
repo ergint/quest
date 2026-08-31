@@ -1,3 +1,13 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Stage 2A secrets / local-only files
+.env
+.env.local
+*.pem
+*.key
+
+# Temporary discovery caches (none committed by design)
+.discovery_cache/
+*.tmp
