@@ -89,6 +89,7 @@ def _base_candidate(discovered_at: str) -> Dict[str, Any]:
         "validation_status": "PENDING",
         "discovery_filter_status": None,
         "discovery_filter_reason": None,
+        "deduplication_notes": [],
     }
 
 

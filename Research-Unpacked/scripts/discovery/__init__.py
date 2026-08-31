@@ -10,14 +10,47 @@ from __future__ import annotations
 
 import datetime as _dt
 import time
+import urllib.error
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional, TypeVar
 
 
 class DiscoveryAPIError(Exception):
-    """Raised when a discovery source (PubMed or Crossref) cannot be reached
-    or returns an unusable response. Callers should catch this per-source so
-    one source failing does not prevent the other from being ingested."""
+    """Base class for a discovery source that could not be ingested. Prefer
+    the specific subclasses below so callers can tell "we never got a
+    response" apart from "we got a response but it was unusable"."""
+
+
+class DiscoveryTransportError(DiscoveryAPIError):
+    """The request itself failed: network error, timeout, permanent HTTP
+    error (4xx), or retries exhausted on a transient error (429/5xx). No
+    response body was ever usably received."""
+
+
+class DiscoveryParseError(DiscoveryAPIError):
+    """A response was received (HTTP success) but its body was not valid or
+    not shaped as expected (malformed JSON/XML, missing expected keys)."""
+
+
+@dataclass
+class SourceHealth:
+    """Per-source status for the discovery summary. Lets the report say
+    "SUCCESS - 0 results" instead of leaving 0 ambiguous with a failure."""
+    status: str  # "SUCCESS" | "API_ERROR" | "PARSE_ERROR"
+    records_returned: int
+    message: str
+
+    @classmethod
+    def success(cls, records_returned: int, message: str = "OK") -> "SourceHealth":
+        return cls(status="SUCCESS", records_returned=records_returned, message=message)
+
+    @classmethod
+    def api_error(cls, message: str) -> "SourceHealth":
+        return cls(status="API_ERROR", records_returned=0, message=message)
+
+    @classmethod
+    def parse_error(cls, message: str) -> "SourceHealth":
+        return cls(status="PARSE_ERROR", records_returned=0, message=message)
 
 
 @dataclass
@@ -60,3 +93,42 @@ class RateLimiter:
             if remaining > 0:
                 time.sleep(remaining)
         self._last_call = time.monotonic()
+
+
+T = TypeVar("T")
+
+RETRYABLE_HTTP_STATUSES = (429, 500, 502, 503, 504)
+
+
+def request_with_retries(
+    attempt_fn: Callable[[], T],
+    max_attempts: int = 3,
+    backoff_seconds: float = 1.0,
+    retry_statuses=RETRYABLE_HTTP_STATUSES,
+    sleep: Callable[[float], None] = time.sleep,
+) -> T:
+    """Runs `attempt_fn` (one HTTP request), retrying with exponential
+    backoff ONLY on HTTP responses whose status is in `retry_statuses`
+    (429/5xx -- transient). A 4xx status outside that set (400/401/403/404)
+    is a permanent client-side error and is raised immediately, unretried.
+    Any non-HTTPError failure (DNS, connection refused, a proxy policy
+    denial surfaced as a bare URLError/OSError) is also raised immediately,
+    unretried -- it may be a permanent policy block, and this project never
+    retries around network/organization policy denials.
+    """
+    last_exc: Optional[urllib.error.HTTPError] = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return attempt_fn()
+        except urllib.error.HTTPError as exc:
+            if exc.code in retry_statuses and attempt < max_attempts:
+                retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                if retry_after and retry_after.isdigit():
+                    delay = float(retry_after)
+                else:
+                    delay = backoff_seconds * (2 ** (attempt - 1))
+                last_exc = exc
+                sleep(delay)
+                continue
+            raise
+    raise last_exc  # pragma: no cover - loop always returns or raises above

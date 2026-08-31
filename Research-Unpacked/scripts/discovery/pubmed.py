@@ -1,7 +1,16 @@
 """PubMed discovery via the official NCBI E-utilities (esearch + efetch).
 
 No HTML scraping. Every network call goes through `_http_get`, which is
-injectable so tests can run entirely offline against canned XML/JSON.
+injectable so tests/fixture-mode can run entirely offline.
+
+Error handling distinguishes two failure classes (see
+scripts/discovery/__init__.py):
+  - DiscoveryTransportError: the request itself failed (network error,
+    permanent 4xx, or retries exhausted on a transient 429/5xx).
+  - DiscoveryParseError: a response was received but its body was not the
+    expected JSON/XML shape.
+This lets the caller report "SUCCESS - 0 results" as something different
+from "FAILED - API error" or "FAILED - parse error".
 """
 from __future__ import annotations
 
@@ -13,9 +22,20 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Any, Callable, Dict, List, Optional
 
-from . import DiscoveryAPIError, DiscoveryWindow, RateLimiter
+from . import (
+    DiscoveryParseError,
+    DiscoveryTransportError,
+    DiscoveryWindow,
+    RateLimiter,
+    request_with_retries,
+)
 
-HttpGet = Callable[[str, Dict[str, Any], float], bytes]
+HttpGet = Callable[..., bytes]
+
+# The response is a body only; no headers, params, or credentials are ever
+# passed to a caller-supplied on_raw callback, so a raw-response dump can
+# never leak an API key or proxy credential.
+OnRaw = Optional[Callable[[str, bytes], None]]
 
 
 def _http_get(url: str, params: Dict[str, Any], timeout: float) -> bytes:
@@ -25,15 +45,42 @@ def _http_get(url: str, params: Dict[str, Any], timeout: float) -> bytes:
         full_url,
         headers={"User-Agent": "ResearchUnpacked-Discovery/1.0"},
     )
-    try:
+
+    def _attempt() -> bytes:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.read()
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
-        raise DiscoveryAPIError(f"PubMed request failed ({full_url}): {exc}") from exc
+
+    try:
+        return request_with_retries(_attempt)
+    except urllib.error.HTTPError as exc:
+        raise DiscoveryTransportError(
+            f"PubMed request failed ({full_url}): HTTP {exc.code} {exc.reason}"
+        ) from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise DiscoveryTransportError(f"PubMed request failed ({full_url}): {exc}") from exc
 
 
 def _api_key() -> Optional[str]:
     return os.environ.get("NCBI_API_KEY") or None
+
+
+def _validate_esearch_response(raw: bytes) -> List[str]:
+    if not raw:
+        raise DiscoveryParseError("PubMed esearch returned an empty response body")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise DiscoveryParseError(f"PubMed esearch response is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict) or "esearchresult" not in data:
+        raise DiscoveryParseError(
+            "PubMed esearch response is missing the expected 'esearchresult' key"
+        )
+    idlist = data["esearchresult"].get("idlist")
+    if idlist is None or not isinstance(idlist, list):
+        raise DiscoveryParseError(
+            "PubMed esearch response is missing a valid 'esearchresult.idlist' list"
+        )
+    return idlist
 
 
 def search_pubmed_ids(
@@ -42,9 +89,11 @@ def search_pubmed_ids(
     query_terms: List[str],
     limiter: RateLimiter,
     http_get: HttpGet = _http_get,
+    on_raw: OnRaw = None,
 ) -> List[str]:
     """Runs one esearch call combining query_terms with OR, restricted to the
-    discovery window via mindate/maxdate. Returns a list of PMIDs."""
+    discovery window via mindate/maxdate. Returns a list of PMIDs (possibly
+    empty -- that is a valid, successful result, not an error)."""
     if not query_terms:
         return []
 
@@ -64,11 +113,9 @@ def search_pubmed_ids(
 
     limiter.wait()
     raw = http_get(config["ncbi_esearch_url"], params, config.get("request_timeout_seconds", 20))
-    try:
-        data = json.loads(raw)
-        return list(data.get("esearchresult", {}).get("idlist", []))
-    except (json.JSONDecodeError, AttributeError, KeyError) as exc:
-        raise DiscoveryAPIError(f"Could not parse PubMed esearch response: {exc}") from exc
+    if on_raw:
+        on_raw("esearch", raw)
+    return _validate_esearch_response(raw)
 
 
 def _text(el: Optional[ET.Element]) -> Optional[str]:
@@ -114,10 +161,18 @@ def _parse_pub_date(article_el: ET.Element) -> Optional[str]:
 
 def parse_pubmed_xml(xml_bytes: bytes) -> List[Dict[str, Any]]:
     """Parses an efetch XML response into a list of raw article dicts."""
+    if not xml_bytes or not xml_bytes.strip():
+        raise DiscoveryParseError("PubMed efetch returned an empty response body")
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError as exc:
-        raise DiscoveryAPIError(f"Could not parse PubMed efetch XML: {exc}") from exc
+        raise DiscoveryParseError(f"PubMed efetch response is not valid XML: {exc}") from exc
+
+    if root.tag != "PubmedArticleSet":
+        raise DiscoveryParseError(
+            f"PubMed efetch response has unexpected root element <{root.tag}>, "
+            "expected <PubmedArticleSet>"
+        )
 
     records: List[Dict[str, Any]] = []
     for article_el in root.findall(".//PubmedArticle"):
@@ -198,6 +253,7 @@ def fetch_pubmed_records(
     config: Dict[str, Any],
     limiter: RateLimiter,
     http_get: HttpGet = _http_get,
+    on_raw: OnRaw = None,
 ) -> List[Dict[str, Any]]:
     if not pmids:
         return []
@@ -219,6 +275,8 @@ def fetch_pubmed_records(
 
         limiter.wait()
         raw = http_get(config["ncbi_efetch_url"], params, config.get("request_timeout_seconds", 20))
+        if on_raw:
+            on_raw("efetch", raw)
         records.extend(parse_pubmed_xml(raw))
 
     return records
@@ -230,6 +288,7 @@ def discover_pubmed(
     query_terms: List[str],
     limit: Optional[int] = None,
     http_get: HttpGet = _http_get,
+    on_raw: OnRaw = None,
 ) -> List[Dict[str, Any]]:
     """Full PubMed discovery: esearch -> efetch -> raw article dicts."""
     api_key = _api_key()
@@ -240,7 +299,7 @@ def discover_pubmed(
     )
     limiter = RateLimiter(rate)
 
-    pmids = search_pubmed_ids(config, window, query_terms, limiter, http_get=http_get)
+    pmids = search_pubmed_ids(config, window, query_terms, limiter, http_get=http_get, on_raw=on_raw)
     if limit is not None:
         pmids = pmids[:limit]
-    return fetch_pubmed_records(pmids, config, limiter, http_get=http_get)
+    return fetch_pubmed_records(pmids, config, limiter, http_get=http_get, on_raw=on_raw)

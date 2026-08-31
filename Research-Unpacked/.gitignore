@@ -11,3 +11,7 @@ __pycache__/
 # Temporary discovery caches (none committed by design)
 .discovery_cache/
 *.tmp
+
+# Stage 2A.1: raw API response dumps from --save-raw (response bodies only,
+# but still local-only debugging data, not committed)
+data/raw-discovery/
